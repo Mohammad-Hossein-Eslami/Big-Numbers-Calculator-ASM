@@ -1,0 +1,1314 @@
+.data
+saving_area: .zero 300
+oper: .long 8
+number_1: .zero 4096
+number_2: .zero 4096
+result: .zero 4096
+is_number1_pos: .long 1
+is_number2_pos: .long 1
+number_1_digit: .long 0
+number_2_digit: .long 0
+divider: .zero 4096
+larger: .long 0
+result_digit: .long 0
+result_sign: .long 0
+carry: .long 0
+multi_carry: .long 0
+zero_for_partial: .long 0
+multi_stop_process: .long 0
+total_partial: .zero 4096
+partial_sum: .zero 4096
+remainder_flag: .long 0
+divider_place: .long 8
+total_partial_index: .long 0
+partial_sum_index: .long 0
+ten: .long 10
+.text
+.globl asm_main
+   
+print_int:
+	larl  %r1, saving_area
+	stmg %r0, %r15, 0(%r1)
+	brasl %r14, putchar
+	larl %r1, saving_area
+	lmg %r0, %r15, 0(%r1)
+	br %r14		
+
+read_int:
+	larl  %r1, saving_area
+        stmg %r0, %r15, 0(%r1)
+	brasl %r14, getchar
+	larl %r1, saving_area
+        lmg %r0, %r1, 0(%r1)
+	larl %r1, saving_area
+	lmg %r3, %r15, 24(%r1)
+	br %r14
+
+asm_main:
+    	stg     %r14, -4(%r15)
+	lay     %r15, -8(%r15)
+
+	la 3, 0
+	la 5, 0
+	la 6, 48
+setup_divider:	
+	larl 1, divider
+	st 6, 0(1,3)
+	la 3, 8(3)
+	la 5, 1(5)
+	chi 5, 512
+	jl setup_divider
+	
+
+
+
+define_operation:
+	la 6, 8
+	la 13, 48
+	la 3, 0
+	brasl %r14, read_int
+	strl %r2, oper #save the type of operation
+	chi %r2, 113 #to finish the program
+	je FIN
+	brasl 14, read_int #danger, this is probably used to read the \n
+
+
+
+first_operand:
+	brasl %r14, read_int
+	chi %r2, 10 #determine when the number is over
+	je after_first_operand
+	chi %r2, 45 # set the sign
+	je neg_first
+	larl %r1, number_1
+	st %r2, 0(%r1, %r3) #store the first number
+	la 3, 8(3) #inc the index by 8
+	j first_operand
+
+neg_first:
+	lgfi %r1, -1 #the sign is set ot -1 for later uses
+	strl %r1, is_number1_pos
+	j first_operand
+
+after_first_operand:
+	strl 3, number_1_digit
+	la 3, 0
+
+
+
+
+second_operand: #same as the first operand
+	brasl 14, read_int
+	chi 2, 10
+	je after_second_operand
+	chi 2, 45
+	je neg_second
+	larl 1, number_2
+	st 2, 0(1,3)
+	larl 1, divider #this is used later for dividing, divider is used for long division
+	st 2, 8(1,3)
+	la 3, 8(3)
+	j second_operand
+
+neg_second:
+	lgfi 1, -1
+	strl 1, is_number2_pos
+	j second_operand
+
+after_second_operand:
+	strl 3, number_2_digit
+	la 3, 0 
+
+
+	lrl 3, number_1_digit	#this whole part decides to align which number under which
+	lrl 9, number_2_digit
+	cr 3,9
+	jl align_1for2
+	jg align_2for1
+	j compare_numbers
+
+
+align_1for2:
+	chi 3, 0
+	jl cont1for2
+	larl 1, number_1
+	l 5, 0(1, 3)
+	st 5, 0(1, 9)
+check_align_1for2: #this loop goes until we reach the end of the bigger number
+	sr 3, 6	#sr 3, 6
+	sr 9,6
+	chi 9, 0
+	brc 11, align_1for2
+	j compare_numbers
+
+cont1for2: #this part makes sure to put zeros behind the number being shifted
+	larl 1, number_1
+	la 7, 48
+	st 7, 0(1,9)
+	j check_align_1for2
+
+align_2for1: # the same process as above, but the indices are reversed
+	chi 9, 0
+	jl cont2for1
+	larl 1, number_2
+	l 5, 0(1, 9)
+	st 5, 0(1,3)
+check_align_2for1:
+	sr 3,6
+	sr 9, 6
+	chi 3, 0
+	brc 11, align_2for1
+	j compare_numbers
+cont2for1:
+	larl 1, number_2
+	la 7, 48
+	st 7, 0(1,3)
+	j check_align_2for1
+
+compare_numbers:
+	la 3, 0
+	#TODO TODO TODO in the Intel code this place is used to handle 0+0
+	la 4, 0
+cont_compare_numbers: #if at any point one of them is larger than the other it will break the loop
+	larl 1, number_1
+	l 5, 0(1,3)
+	larl 1, number_2
+	l 7, 0(1,3)
+	sr 5, 7
+	brc 4, one_less_two
+	brc 2, one_more_two
+	la 3, 8(3)
+	la 4, 1(4)
+	chi 4, 511
+	je equal
+	j cont_compare_numbers
+
+
+equal:	#if two numbers are equal
+	la 3, 0
+	strl 3, larger
+	j compare_operand
+
+one_less_two: #if the first number is smaller
+	la 3, 2
+	strl 3, larger
+	j compare_operand
+
+one_more_two: #if the second number is smaller
+	la 3, 1
+	strl 3, larger
+
+compare_operand: #this part decides which operand to be executed
+	larl 1, number_1
+	l 4, 0(1)
+	chi 4, 48
+	je first_zero
+cont_compare_operand:
+	lrl 3, oper
+	chi 3, 43
+	je addition
+	chi 3, 45
+	je subtraction
+	chi 3, 42
+	je multiplication
+	chi 3, 47
+	je division
+	chi 3, 37
+	je remainder
+
+first_zero:
+	larl 1, number_2
+	l 4, 0(1)
+	chi 4, 48
+	je answer_zero_addition
+	j cont_compare_operand
+
+
+
+addition:
+	lrl 3, number_1_digit
+	sr 3, 6
+	lrl 5, number_2_digit
+	sr 5, 6
+	lr 8, 3 # register 8 is just used to avoid mesdding register 3 up
+	sr 8, 5
+	brc 2, cont_addition
+	lr 7, 3
+	lr 3, 5
+	lr 5, 7
+cont_addition:
+	la 3, 8(3)
+	strl 3, result_digit # all of this is done to store the number of the result's digits which can at most be one more than the biggest number
+	sr 3, 6
+	lrl 5, is_number1_pos
+	lrl 8, is_number2_pos
+	mr 4, 8
+	chi 5, 0
+	jl add_diff_sign
+
+add_sameSign: # here register3 serves as the rbx and is used for indexing and register5 as rax and r8 for keeping number 10
+	lrl 4, is_number1_pos
+	strl 4, result_sign
+	larl 1, number_1
+	l 5, 0(1,3)
+	larl 1, number_2
+	l 7, 0(1,3)
+	sr 5, 13
+	sr 7, 13
+continue_add_sameSign:
+	ar 5, 7
+	lrl 4, carry
+	ar 5, 4
+	la 8, 10
+	la 4, 0
+	dr 4, 8
+	larl 1, result
+	st 4, 8(1,3)
+	strl 5, carry
+	sr 3, 6
+	chi 3, 0
+	jl make_index_zero_addition
+	j add_sameSign
+	
+	
+
+add_diff_sign:
+	lrl 3, larger
+	chi 3, 0
+	je answer_zero_addition # this part is to check if two numbers are the same, but only different in signes
+	lrl 3, number_1_digit # this part checks if a number has more digits and decides to subtract which one from the other
+	sr 3, 6
+	lrl 5, number_2_digit
+	sr 5, 6
+	lr 8, 3
+	sr 8, 5
+	brc 4, add_diff_sign_second_larger
+	brc 2, add_diff_sign_first_larger
+	lrl 7, larger #this part was added to compare two number that have the same number of digits
+	chi 7, 2
+	je add_diff_sign_second_larger
+	j add_diff_sign_first_larger
+
+
+add_diff_sign_second_larger: #here rdx is the same as r5 and rbx is the same as r3, 7 is the number coming from number_1 and 9 is the number coming from number_2
+	larl 1, number_1
+	l 7, 0(1, 5)
+	larl 1, number_2
+	l 9, 0(1, 5)
+	sr 9, 7
+	chi 9, 0
+	brc 4, fix_neg_result_addition_second_larger #here we check if a borrow is needed
+	larl 1, result
+	st 9, 8(1,5)
+check_condition_diff_sign_second_larger:
+	sr 5, 6
+	chi 5, 0
+	brc 11, add_diff_sign_second_larger
+	j check_result_sign_diff_sign
+	
+fix_neg_result_addition_second_larger:
+	la 10 , 10 #here r10 is just a temporary register so we can add what is inisde r9 by 10 to make it positive
+	ar 9, 10
+	larl 1, result
+	st 9, 8(1, 5)
+	sr 5,6
+	larl 1, number_2
+	l 9, 0(1, 5)
+	bctr 9, 0
+	larl 1, number_2
+	st 9, 0(1,5)
+	la 5, 8(5)
+	j check_condition_diff_sign_second_larger 
+
+
+
+add_diff_sign_first_larger: #here rdx is the same as r5 and rbx is the same as r3, 7 is the number coming from number_1 and 9 is the number coming from number_2
+        larl 1, number_2
+        l 7, 0(1, 3)
+        larl 1, number_1
+        l 9, 0(1, 3)
+        sr 9, 7
+        chi 9, 0
+        brc 4, fix_neg_result_addition_first_larger #here we check if a borrow is needed
+        larl 1, result
+        st 9, 8(1,3)
+check_condition_diff_sign_first_larger:
+        sr 3, 6
+        chi 3, 0
+        brc 11, add_diff_sign_first_larger
+        j check_result_sign_diff_sign
+
+fix_neg_result_addition_first_larger:
+        la 10, 10
+	ar 9, 10
+        larl 1, result
+        st 9, 8(1, 3)
+        larl 1, number_1
+        sr 3, 6
+        l 9, 0(1, 3)
+        bctr 9, 0
+        st 9, 0(1,3)
+        la 3, 8(3)
+        j check_condition_diff_sign_first_larger
+
+
+
+
+
+
+
+
+
+check_result_sign_diff_sign:	#these two labels just check whether which number was bigger so they can set the sign based on that
+	lrl 3, larger
+	chi 3, 2
+	je check_sign_two
+	lrl 3, is_number1_pos
+	strl 3, result_sign
+	j make_index_zero_addition
+
+check_sign_two:	
+	lrl 3, is_number2_pos
+	strl 3, result_sign
+
+
+
+
+make_index_zero_addition:
+	la 3, 0
+	lrl 5, carry	
+	larl 1, result
+	st 5, 0(1) # this part places the last carry of the result
+	lrl 5, larger
+	chi 5, 0 # checkes whether the final answer is zero by checking the result of the comparison
+	jne print_addition_result
+	lrl 5, is_number1_pos #this part until the next label checks if the number had a different sign while they were equal
+	lrl 7, is_number2_pos
+	mr 4, 7
+	la 3, 0
+	chi 5, 0
+	brc 11, print_addition_result
+	j answer_zero_addition
+print_addition_result: #this part checks whether the number is negative and prints the negative sign if necessary
+	lrl 5, result_sign
+	chi 5, 0
+	jl print_neg_sign
+cont_print_addition_result: #this part will skip the zeros, if any in the beginning of the result
+	larl 1, result
+	l 5, 0(1, 3)
+	chi 5, 0
+	je skip_printing_addition
+cont2_print_addition_result: #this part prints the digit of the numbers one by one until it reaches the end
+	larl 1, result
+	l 2, 0(1,3)
+	la 2, 48(2)
+	brasl 14, print_int
+	la 3, 8(3)
+	lrl 5, result_digit
+	lr 8, 3 #r8 keeps the value of r3 so the value of r3 does not get damaged
+	sr 8, 5
+	brc 2, finish_addition
+	j cont2_print_addition_result
+
+
+
+skip_printing_addition:
+	la 3, 8(3)
+	j cont_print_addition_result
+
+
+
+print_neg_sign:
+	la 2, 45
+	brasl 14, print_int
+	la 2, 1
+	strl 2, is_number1_pos
+	j cont_print_addition_result
+
+
+
+
+answer_zero_addition:
+	la 2, 48
+	brasl 14, print_int
+	j finish_addition
+
+
+set_back_array:
+	la 5, 0
+	larl 1, number_1
+	st 5, 0(1, 3)
+	larl 1, number_2
+	st 5, 0(1,3)
+	larl 1, result
+	st 5, 0(1,3)
+	larl 1, divider
+	st 13, 0(1,3)
+	la 3, 8(3)
+	bctr 4, 0
+	chi 4, 0
+	brc 2, set_back_array
+	j cont_finish_addition
+	
+
+
+
+
+finish_addition:
+	la 4, 512
+	la 3, 0
+	j set_back_array
+cont_finish_addition:
+	la 2, 10
+	brasl 14, print_int
+	la 3, 1
+	strl 3, is_number1_pos
+	strl 3, is_number2_pos
+	la 3, 0
+	strl 3, carry
+	j define_operation
+
+
+
+
+
+
+
+
+subtraction:
+	lrl 3, larger
+	chi 3, 0
+	je check_sign_equal_number
+half_cont_subtraction:
+	lrl 3, number_1_digit
+	sr 3, 6
+	lrl 5, number_2_digit
+	sr 5, 6
+	lr 8, 3
+	sr 8, 5
+	brc 2, cont_subtraction
+
+	lr 7, 3
+	lr 3, 5
+	lr 5, 7
+cont_subtraction:
+	la 3, 8(3)
+	strl 3, result_digit
+	sr 3, 6
+	lrl 9, is_number1_pos
+	lrl 7, is_number2_pos
+	mr 8, 7
+	chi 9, 0
+	jl add_sameSign #if the two numbers have different signs and they are subtracted, it's the same if we add them together
+	lrl 8, larger
+	chi 8, 2
+	je make_second_neg #if the second number is bigger then the result's number is the negate of the second number's sign
+	j add_diff_sign #else we are just adding two numbers with different signs
+
+make_second_neg: #here we negate the sign of the second number to find the sign of the result	
+	lrl 9, is_number2_pos
+	la 7, 0
+	la 8, 1
+	sr 7, 8
+	mr 8, 7
+	strl 9, is_number2_pos
+	j add_diff_sign
+
+check_sign_equal_number:
+	lrl 3, is_number1_pos
+	lrl 5, is_number2_pos
+	mr 4, 3
+	chi 5, 0
+	brc 2, half_cont_subtraction
+	lrl 5, is_number2_pos
+	la 3, 0
+	la 9, 1
+	sr 3, 9
+	mr 4, 3
+	strl 5, is_number2_pos
+	lrl 3, number_2_digit
+	strl 3, result_digit
+	sr 3, 6
+	j add_sameSign
+	
+
+
+multiplication:
+	la 3, 0
+	strl 3, zero_for_partial
+	strl 3, multi_stop_process
+	strl 3, zero_for_partial
+	strl 3, partial_sum_index
+	strl 3, total_partial_index
+	strl 3, multi_carry
+	lrl 5, is_number1_pos
+	lrl 7, is_number2_pos
+	mr 4, 7
+	chi 5, 0
+	jl set_result_sign
+	la 3, 1
+	strl 3, result_sign
+	j arithmetic_multi
+
+set_result_sign:
+	la 3, 0
+	la 4, 1
+	sr 3, 4
+	strl 3, result_sign
+
+
+arithmetic_multi: #here r3 is the same as rbx and r7 is the same r12
+	lrl 3, number_1_digit
+	sr 3, 6
+	lrl 7, number_2_digit
+	sr 7, 6
+	lr 5, 3
+	lr 4, 3 #compare r3 and r7
+	sr 4, 7
+	chi 4, 0
+	jle first_num_smaller	
+	sr 3, 7
+	sr 3, 6
+	strl 3, multi_stop_process
+	lrl 3, number_1_digit
+	sr 3, 6
+	lr 4, 7
+	lr 7, 3
+	lr 3, 4
+	larl 1, number_2
+	lr 3, 7
+	l 12, 0(1,7)
+	sr 12, 13
+partial_sum_one: # this part is to calculate the first partial and put in total partial
+	larl 1, number_1
+	lr 3, 7
+	l 9, 0(1,3)
+	sr 9, 13
+	mr 8, 12
+	lrl 4, multi_carry
+	ar 9, 4
+	lrl 4, ten
+	la 8, 0
+	dr 8, 4
+	strl 9, multi_carry
+	lrl 3, total_partial_index
+	larl 1, total_partial
+	st 8, 0(1,3)
+	la 3, 8(3)
+	strl 3, total_partial_index
+	sr 7, 6
+	chi 7, 0
+	brc 11, partial_sum_one
+	lrl 4, multi_carry
+	lrl 3, total_partial_index
+	larl 1, total_partial
+	st 4, 0(1,3)
+	lrl 4, zero_for_partial
+	la 4, 1(4)
+	strl 4, zero_for_partial
+	sr 5, 6
+	lrl 4, total_partial_index
+	strl 4, partial_sum_index
+	lrl 4, multi_stop_process
+	lr 12, 5
+	sr 12, 4
+	chi 12, 0
+	je print_multi_answer
+	la 4, 0
+	strl 4, partial_sum_index
+get_digits_for_partial:
+	larl 1, number_2
+	l 12, 0(1,5)
+	sr 12, 13
+	lrl 7, number_1_digit
+	sr 7, 6
+	la 4, 0
+	strl 4, multi_carry
+	lrl 4, zero_for_partial
+	j place_zero
+calculate_partial:
+	larl 1, number_1
+	lr 3, 7
+	l 9, 0(1,3)
+	sr 9, 13
+	mr 8, 12
+	lrl 4, multi_carry
+	ar 9, 4
+	lrl 4, ten
+	la 8,0
+	dr 8, 4
+	strl 9, multi_carry
+	lrl 3, partial_sum_index
+	larl 1, partial_sum
+	st 8, 0(1,3)
+	la 3, 8(3)
+	strl 3, partial_sum_index
+	sr 7, 6
+	chi 7, 0
+	brc 11, calculate_partial
+	lrl 4, multi_carry
+	lrl 3, partial_sum_index
+	larl 1, partial_sum
+	st 4, 0(1,3)
+	lrl 4, zero_for_partial
+	la 4, 1(4)
+	strl 4, zero_for_partial
+	la 3, 0 #here r3 is used in add_partials as r10 in intel
+	la 4, 0
+	strl 4, carry
+	j add_partials
+cont_calculate_partials:
+	sr 5, 6
+	lrl 4, multi_stop_process
+	lr 12, 5
+	sr 12, 4
+	chi 12, 0
+	je print_multi_answer
+	la 3, 0
+	strl 3, partial_sum_index
+	j get_digits_for_partial
+	
+
+
+
+place_zero:
+	la 10, 0 #TODO TODO danger of using r10
+	lrl 3, partial_sum_index
+	larl 1, partial_sum
+	st 10, 0(1,3)
+	la 3, 8(3)
+	strl 3, partial_sum_index
+	bctr 4, 0
+	chi 4, 0
+	jne place_zero
+	j calculate_partial
+	
+
+add_partials:
+	larl 1, total_partial
+	l 9, 0(1, 3)
+	larl 1, partial_sum
+	l 4, 0(1,3)
+	ar 9, 4
+	lrl 4, carry
+	ar 9, 4
+	la 10, 10
+	lr 4, 9
+	sr 4, 10
+	chi 4, 0
+	brc 11, fix_add_carry
+	larl 1, total_partial
+	st 9, 0(1,3)
+	la 4, 0
+	strl 4, carry
+cont_add_partials:
+	la 3, 8(3)
+	lrl 4, partial_sum_index
+	lr 10, 3
+	sr 10, 4
+	chi 10, 0
+	jle add_partials
+	j cont_calculate_partials	
+	
+
+fix_add_carry:
+	la 8, 0
+	lrl 10, ten
+	dr 8, 10
+	strl 9, carry
+	larl 1, total_partial
+	st 8, 0(1,3)
+	j cont_add_partials
+
+
+
+
+first_num_smaller:
+	lr 5, 7 #this whole part is to find the number of itimes we have to multiply and find partial sums/products
+	sr 7, 3
+	sr 7, 6
+	strl 7, multi_stop_process
+	lrl 7, number_2_digit
+	sr 7, 6
+	lr 3, 7
+	larl 1, number_1
+	l 12, 0(1,3)
+	sr 12, 13
+partial_sum_one1: # this part is to calculate the first partial and put in total partial
+	larl 1, number_2
+	lr 3, 7
+        l 9, 0(1, 3)
+        sr 9, 13
+        mr 8, 12
+        lrl 4, multi_carry
+        ar 9, 4
+        lrl 4, ten
+        la 8, 0
+        dr 8, 4
+        strl 9, multi_carry
+        lrl 3, total_partial_index
+        larl 1, total_partial
+        st 8, 0(1,3)
+        la 3, 8(3)
+        strl 3, total_partial_index
+        sr 7, 6
+        chi 7, 0
+        brc 11, partial_sum_one1
+        lrl 4, multi_carry
+        lrl 3, total_partial_index
+        larl 1, total_partial
+        st 4, 0(1,3)
+        lrl 4, zero_for_partial
+        la 4, 1(4)
+        strl 4, zero_for_partial
+        sr 5, 6
+        lrl 4, total_partial_index
+        strl 4, partial_sum_index
+        lrl 4, multi_stop_process
+        lr 12, 5
+        sr 12, 4
+        chi 12, 0
+        je print_multi_answer
+        la 4, 0
+        strl 4, partial_sum_index
+get_digits_for_partial1:
+        larl 1, number_1
+        l 12, 0(1,5)
+        sr 12, 13
+        lrl 7, number_2_digit
+        sr 7, 6
+        la 4, 0
+        strl 4, multi_carry
+        lrl 4, zero_for_partial
+        j place_zero1
+calculate_partial1:
+        larl 1, number_2
+	lr 3, 7
+        l 9, 0(1,3)
+        sr 9, 13
+        mr 8, 12
+        lrl 4, multi_carry
+        ar 9, 4
+        lrl 4, ten
+        la 8,0
+        dr 8, 4
+        strl 9, multi_carry
+        lrl 3, partial_sum_index
+        larl 1, partial_sum
+        st 8, 0(1,3)
+        la 3, 8(3)
+        strl 3, partial_sum_index
+        sr 7, 6
+        chi 7, 0
+        brc 11, calculate_partial1
+        lrl 4, multi_carry
+        lrl 3, partial_sum_index
+        larl 1, partial_sum
+        st 4, 0(1,3)
+        lrl 4, zero_for_partial
+        la 4, 1(4)
+        strl 4, zero_for_partial
+        la 3, 0 #here r3 is used in add_partials as r10 in intel
+        la 4, 0
+        strl 4, carry
+        j add_partials1
+cont_calculate_partials1:
+        sr 5, 6
+        lrl 4, multi_stop_process
+        lr 12, 5
+        sr 12, 4
+        chi 12, 0
+        je print_multi_answer
+        la 3, 0
+        strl 3, partial_sum_index
+        j get_digits_for_partial1
+
+
+
+
+place_zero1:
+        la 10, 0 #TODO TODO danger of using r10
+        lrl 3, partial_sum_index
+        larl 1, partial_sum
+        st 10, 0(1,3)
+        la 3, 8(3)
+        strl 3, partial_sum_index
+        bctr 4, 0
+        chi 4, 0
+        jne place_zero1
+        j calculate_partial1
+
+
+add_partials1:
+        larl 1, total_partial
+        l 9, 0(1, 3)
+        larl 1, partial_sum
+        l 4, 0(1,3)
+        ar 9, 4
+        lrl 4, carry
+        ar 9, 4
+        la 10, 10
+        lr 4, 9
+        sr 4, 10
+        chi 4, 0
+        brc 11, fix_add_carry1
+        larl 1, total_partial
+        st 9, 0(1,3)
+        la 4, 0
+        strl 4, carry
+cont_add_partials1:
+        la 3, 8(3)
+        lrl 4, partial_sum_index
+        lr 10, 3
+        sr 10, 4
+        chi 10, 0
+        jle add_partials1
+        j cont_calculate_partials1
+
+
+fix_add_carry1:
+        la 8, 0
+        lrl 10, ten
+        dr 8, 10
+        strl 9, carry
+        larl 1, total_partial
+        st 8, 0(1,3)
+        j cont_add_partials1
+
+
+
+
+
+
+
+
+print_multi_answer:
+	lrl 4, result_sign
+	chi 4, 0
+	jl print_neg_sign_multi
+cont_print_multi_answer:
+	lrl 3, partial_sum_index
+	larl 1, total_partial
+	l 4, 0(1,3)
+	chi 4, 0
+	je skip_first_zero 
+cont2_print_multi_answer:
+	lrl 3, partial_sum_index
+	larl 1, total_partial
+	l 2, 0(1,3)
+	ar 2, 13
+	brasl 14, print_int
+	sr 3, 6
+	strl 3, partial_sum_index
+	chi 3, 0
+	brc 11, cont2_print_multi_answer
+	j finish_multi
+
+
+skip_first_zero:
+	sr 3, 6
+	strl 3, partial_sum_index
+	larl 1, total_partial
+	l 4, 0(1,3)
+	chi 4, 0
+	je answer_zero
+	j cont2_print_multi_answer
+
+
+print_neg_sign_multi:
+	lrl 3, partial_sum_index
+	la 5, 16
+	sr 3, 5
+	larl 1, total_partial
+	l 5, 0(1, 3)
+	chi 5, 0
+	je answer_zero
+	la 2, 45
+	brasl 14, print_int
+	j cont_print_multi_answer
+		
+answer_zero:
+	la 2, 48
+	brasl 14, print_int
+	j finish_multi
+
+
+
+
+
+set_back_array_multi:
+	la 4, 0
+	larl 1, number_1
+	st 4, 0(1,3)
+	larl 1, number_2
+	st 4, 0(1,3)
+	larl 1, result
+	st 4, 0(1,3)
+	larl 1, partial_sum
+	st 4, 0(1,3)
+	larl 1, total_partial
+	st 4, 0(1,3)
+	larl 1, divider
+	st 13, 0(1,3)	
+	la 3, 8(3)	
+	bctr 5, 0
+	chi 5, 0
+	brc 2, set_back_array_multi
+	j cont_finish_multi
+
+
+
+
+
+
+finish_multi:
+	la 5, 512
+	la 3, 0
+	j set_back_array_multi
+cont_finish_multi:
+	la 2, 10
+	brasl 14, print_int
+	la 3, 1
+	strl 3, is_number1_pos
+	strl 3, is_number2_pos
+	j define_operation
+	
+
+
+
+
+
+
+remainder:
+	la 3, 1
+	strl 3, remainder_flag
+division:
+	lrl 5, is_number1_pos
+	lrl 7, is_number2_pos
+	mr 4, 7
+	chi 5, 0
+	jl result_sign_neg_div
+	la 3, 1
+	strl 3, result_sign
+	j dividing_or_remainder
+
+result_sign_neg_div:
+	la 3, 0
+	la 4, 1
+	sr 3, 4
+	strl 3, result_sign
+
+
+dividing_or_remainder:
+	lrl 3, remainder_flag
+	chi 3, 0
+	je dividing
+	lrl 3, larger
+	chi 3,1
+	jle dividing
+	lrl 3, number_2_digit #r3 is the same as rdx and r5 is the same as rbx
+	lrl 5, number_1_digit
+	sr 3, 5
+	lrl 5, number_2_digit
+print_remainder_for_smaller: #this part checks if the first number is smaller so it prints itself as the remainder
+	lrl 4, is_number1_pos
+	chi 4, 0
+	jl print_neg_remainder_smaller
+cont_print_remainder_for_smaller:
+	larl 1, number_1
+	l 2, 0(1, 3)
+	brasl 14, print_int
+	la 3, 8(3)
+	lr 8, 3
+	sr 8, 5
+	brc 4, cont_print_remainder_for_smaller
+	la 2, 10
+	brasl 14, print_int
+	j complete_division
+
+
+
+
+
+
+print_neg_remainder_smaller:
+	la 2, 45
+	brasl 14, print_int
+	j cont_print_remainder_for_smaller
+
+
+
+
+dividing:
+	lrl 3, larger #this part checks if the first number is smaller so it prints 0 as the answer to division
+	chi 3, 1
+	jle the_real_division
+	la 2, 48
+	brasl 14, print_int
+	la 2, 10
+	brasl 14, print_int
+	j complete_division
+
+the_real_division: #here r3 is rdx and r5 is rbx
+	lrl 3, number_1_digit
+	sr 3, 6
+	la 5, 0
+compare_first_term:
+	larl 1, divider
+	l 4, 8(1, 5)
+	larl 1, number_1
+	l 8, 0(1,5)
+	lr 9, 4
+	sr 9, 8
+	brc 4, shift_number_1
+	brc 2, start_division
+	la 5, 8(5)
+	lr 9, 5
+	sr 9, 3
+	jle compare_first_term
+
+
+shift_number_1:	#since we are preforming a llong division the first number has to be aligned above the second number to perform subtraction
+	lrl 3, number_1_digit
+	la 3, 8(3)
+	strl 3, number_1_digit
+	sr 3, 6
+	sr 3, 6
+cont_shift_number_1:
+	larl 1, number_1
+	l 5, 0(1, 3)
+	st 5, 8(1, 3)
+	sr 3, 6
+	chi 3, 0
+	brc 11, cont_shift_number_1
+	larl 1, number_1
+	st 13, 0(1)
+
+
+
+start_division: #here the real division starts. r3 is the same as rdx and r7 as rbx
+	lrl 3, number_1_digit
+	sr 3, 6
+subtract_to_divide: #this part just subtracts the second number from the first one and checks if the first numbere has got smaller. if it got smaller then it shifts the first number to the right once
+	larl 1, number_1
+	l 5, 0(1, 3)
+	larl 1, divider
+	l 4, 0(1, 3)
+	sr 5, 4	
+	larl 1, number_1
+	st 5, 0(1,3)
+	chi  5, 0
+	jl fix_borrow_digit
+cont_subtract_to_divide:
+	larl 1, number_1
+	l 5, 0(1, 3)
+	la 5, 48(5)
+	st 5, 0(1,3)	
+	sr 3, 6
+	chi 3, 0
+	brc 11, subtract_to_divide #this is where we compare the first and the second number to see if we need to shift
+	lrl 3, divider_place
+	larl 1, result
+	l 5, 0(1,3)
+	la 5, 1(5)
+	st 5, 0(1,3)
+	la 3, 0
+	lrl 7, number_1_digit
+	sr 7, 6
+	j  compare_after_subtraction
+	
+
+
+
+fix_borrow_digit:
+	larl 1, number_1
+	l 5, 0(1, 3)
+	la 9, 10
+	ar 5, 9
+	st 5, 0(1,3)
+	sr 3, 6
+	larl 1, number_1
+	l 9, 0(1, 3)
+	bctr 9, 0
+	st 9, 0(1,3)
+	la 3, 8(3)
+	j cont_subtract_to_divide	
+
+
+compare_after_subtraction:
+	larl 1, divider
+	l 4, 0(1, 3)
+	larl 1, number_1
+	l 5, 0(1, 3)
+	sr 4, 5
+	chi 4, 0
+	brc 4, start_division
+	chi 4, 0
+	brc 2, shift_divider
+	la 3, 8(3)
+	lr 5, 3
+	sr 5, 7
+	brc 13, compare_after_subtraction
+	j start_division
+
+
+
+shift_divider: #here r3 is the same as rax and r5 is the same as rbx
+	lrl 3, divider_place
+	lrl 4, number_2_digit
+	ar 3, 4
+	lrl 9, number_1_digit
+	lr 5, 3
+	sr 5, 9
+	chi 5, 0
+	je finish_division_or_remainder #from shift_divider until here we are checking if our divider can be shifter anymore 
+	sr 3, 6
+	lr 5, 3
+cont_shift_divider:
+	larl 1, divider
+	l 7, 0(1,5)
+	st 7, 8(1, 5)
+	sr 5, 6
+	chi 5, 0
+	brc 11, cont_shift_divider
+	larl 1, divider
+	st 13, 0(1)
+	lrl 3, divider_place
+	la 3, 8(3)
+	strl 3, divider_place
+	la 3, 0
+	lrl 7, number_1_digit
+	sr 7, 6
+	j compare_after_subtraction
+	
+
+
+finish_division_or_remainder: #here r3 is the same as rdx and r5 is the same as r5
+	lrl 3, remainder_flag
+	chi 3, 0
+	je finish_division	
+	lrl 3, divider_place
+	lrl 5, number_1_digit
+	sr 5, 6
+	lrl 4, is_number1_pos
+	chi 4, 0
+	jl print_neg_remainder_bigger
+print_remainder_bigger: #this is tp skip printing the first zeros
+	larl 1, number_1
+	l 4, 0(1, 3)
+	chi 4, 48
+	je skip_first_zero_div
+cont_print_remainder_bigger:
+	larl 1, number_1
+	l 2, 0(1,3)
+	brasl 14, print_int
+	la 3, 8(3)
+	lr 7, 3
+	sr 7, 5
+	chi 7, 0
+	brc 13, cont_print_remainder_bigger
+	sr 3, 6
+	larl 1, number_1
+	l 4, 0(1,3)
+	chi 4, 0
+	jne skip_printing_zero_remainder
+	la 2, 48
+	brasl 14, print_int
+skip_printing_zero_remainder:
+	la 2, 10
+	brasl 14, print_int
+	j complete_division
+
+
+
+print_neg_remainder_bigger:
+	la 2, 45
+	brasl 14, print_int
+	j print_remainder_bigger
+
+
+skip_first_zero_div:
+	la 3, 8(3)
+	j print_remainder_bigger
+
+
+
+finish_division:
+	la 3, 8 #we start from here because we know our result starts from the second block of the array
+	lrl 4, result_sign
+	chi 4, 0
+	jl print_negative_sign
+print_answer_division:
+	larl 1, result
+	l 2, 0(1, 3)
+	la 2, 48(2)
+	brasl 14, print_int
+	la 3, 8(3)
+	lrl 4, divider_place
+	lr 5, 3
+	sr 5, 4
+	chi 5, 0
+	jle print_answer_division
+	la 2, 10
+	brasl 14, print_int
+	j complete_division
+	
+
+
+print_negative_sign:
+	la 2, 45
+	brasl 14, print_int
+	j print_answer_division
+
+
+setback_array_div:
+	la 9, 0
+	larl 1, number_1
+	st 9, 0(1,3)
+	larl 1, number_2
+	st 9, 0(1,3)
+	larl 1, result
+	st 9, 0(1, 3)
+	larl 1, divider
+	st 13, 0(1,3)
+	la 3, 8(3)
+	bctr 5, 0
+	chi 5, 0
+	brc 2, setback_array_div
+	j cont_complete_div	
+
+
+
+
+
+complete_division:
+	la 5, 512
+	la 3, 0
+	j setback_array_div
+cont_complete_div:
+	la 3, 8
+	strl 3, divider_place
+	la 3, 1
+	strl 3, is_number1_pos
+	strl 3, is_number2_pos
+	la 3, 0
+	strl 3, remainder_flag
+	j define_operation
+
+FIN:
+#	lrl 5, number_1_digit
+#	sr 5, 6
+#testing:
+#	larl 1, result
+#	l 2, 0(1,5)
+#	la 2, 48(2)
+#	brasl 14, print_int
+#	sr 5, 6
+#	brc 11, testing
+
+
+	lay     %r15, 8(%r15)
+    	lg      %r14, -4(%r15)
+    	br      %r14
+
+

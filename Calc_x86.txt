@@ -1,0 +1,1053 @@
+
+;the result of all read functions are in rax
+;the input for all print functions has to be moved to rdi
+
+segment .data
+number_1: dq qword 512 dup(0)
+number_2: dq qword 512 dup(0)
+number_1_digit: dq qword 0
+number_2_digit: dq qword 0
+result_digit: dq qword 0
+oper: dq 0
+is_number1_pos: dq 1
+is_number2_pos: dq 1
+result: dq qword 512 dup(0)
+carry: dq 0
+result_sign: dq 1
+larger: dq 0
+partial_sum: dq qword 512 dup(0)
+total_partial: dq qword 512 dup(0)
+multi_carry: dq 0
+zero_for_partial: dq 0
+multi_stop_process: dq 0
+divider: dq qword 512 dup(48)
+divider_place: dq qword 8
+remainder_flag: dq qword 0
+num: dq 0
+char: dq 0
+segment .text
+
+	global  asm_main
+
+
+
+asm_main:
+
+define_operation:
+	mov rbx, 0
+	call read_char
+	mov qword oper[0], rax
+	cmp rax, 113
+	je FIN
+	call read_int	
+
+first_operand:
+	call read_int
+	cmp rax, 10
+	je after_first_operand
+	cmp rax, 45
+	je neg_first 
+	mov qword number_1[rbx], rax
+	add rbx, 8
+	jmp first_operand
+
+neg_first:
+	mov qword is_number1_pos[0], -1
+	jmp first_operand
+	
+
+after_first_operand:
+	mov qword number_1_digit[0], rbx
+	mov rbx, 0
+
+
+
+
+
+second_operand:
+	call read_int
+	cmp rax, 10
+	je after_second_operand
+	cmp rax, 45
+	je neg_second
+	mov qword number_2[rbx], rax
+	mov qword divider[rbx + 8], rax
+	add rbx, 8
+	jmp second_operand
+
+neg_second:
+        mov qword is_number2_pos[0], -1
+        jmp second_operand
+
+
+
+after_second_operand:
+	mov qword number_2_digit[0], rbx
+	mov rbx, 0
+
+
+
+	mov rdx, qword number_1_digit[0]
+	mov rbx, qword number_2_digit[0]
+	cmp rdx, rbx
+	jl align_1for2
+	jg align_2for1
+	jmp compare_numbers
+
+
+align_1for2:
+	cmp rdx, 0
+	jl cont1for2
+	mov r12, qword number_1 [rdx]
+	mov qword number_1 [rbx], r12
+check_align_1for2:
+	sub rdx, 8
+	sub rbx, 8
+	cmp rbx, 0
+	jge align_1for2
+	jmp compare_numbers
+
+cont1for2:
+	mov qword number_1 [rbx], 48
+	jmp check_align_1for2
+
+
+
+
+align_2for1:
+        cmp rbx, 0
+        jl cont2for1
+        mov r12, qword number_2 [rbx]
+        mov qword number_2 [rdx], r12
+check_align_2for1:
+        sub rdx, 8
+        sub rbx, 8
+        cmp rdx, 0
+        jge align_2for1
+        jmp compare_numbers
+
+cont2for1:
+        mov qword number_2 [rdx], 48
+        jmp check_align_2for1
+
+
+compare_numbers:
+	mov rdx, 0
+	mov rcx, 0
+cont_compare_numbers:
+	mov r12, qword number_1[rdx]
+	mov r13, qword number_2[rdx]
+	cmp r12, r13
+	jl one_less_two
+	jg one_more_two
+ 	add rdx, 8
+	inc rcx
+	cmp rcx, 511
+	je equal
+	jmp cont_compare_numbers
+
+equal:
+	mov qword larger[0], 0
+	jmp compare_operand
+
+one_less_two:
+	mov qword larger[0], 2
+	jmp compare_operand
+
+one_more_two:
+	mov qword larger[0], 1	
+
+
+
+compare_operand:
+	cmp qword number_1[0], 48
+	je first_zero
+cont_compare_operand:
+	mov r12, qword oper[0]
+	cmp r12, 43
+	je addition
+	cmp r12, 45
+	je subtraction
+	cmp r12, 42
+	je multiplication
+	cmp r12, 47
+	je division
+	cmp r12, 37
+	je remainder
+
+first_zero:
+	cmp qword number_2[0], 48
+	je answer_zero_addition
+	jmp cont_compare_operand
+
+
+
+
+
+addition:
+
+	mov rbx, qword number_1_digit[0]
+	sub rbx, 8
+	mov r13, qword number_2_digit[0]
+	sub r13, 8
+	cmp rbx, r13
+	jg cont_addition
+	xchg rbx, r13
+cont_addition: ;this is where we decide to add two numbers with the same sign or different signs
+	add rbx, 8
+	mov qword result_digit[0], rbx ;here we save the number result's number of digits
+	sub rbx, 8
+	mov rax, qword is_number1_pos[0]
+	mov r12, qword is_number2_pos[0]
+	mul r12
+	cmp rax, 0
+	jl add_diff_sign
+
+
+add_sameSign:
+	mov r13, qword is_number1_pos[0]
+	mov qword result_sign[0], r13
+	mov rax, qword number_1[rbx]
+	mov r12, qword number_2[rbx]
+	sub rax, 48
+	sub r12, 48
+continue_add_sameSign:
+	add rax, r12
+	add rax, qword carry[0]
+	mov rdx, 0
+	mov r14, 10
+	div r14
+	mov qword result [rbx + 8], rdx
+	mov qword carry[0], rax
+	sub rbx, 8
+	cmp rbx, 0
+	jl make_index_zero_addition
+	jmp add_sameSign
+	
+
+
+add_diff_sign:
+	mov r14, qword larger[0]
+	cmp r14, 0
+	je print_zero_addition
+	mov rbx, qword number_1_digit[0]
+	sub rbx, 8
+	mov rdx, qword number_2_digit[0]
+	sub rdx, 8
+	cmp rbx, rdx
+	jl add_diff_sign_second_larger
+	jg add_diff_sign_first_larger
+	mov r14, qword larger[0]
+	cmp r14, 2
+	je add_diff_sign_second_larger
+	jmp add_diff_sign_first_larger
+
+
+add_diff_sign_second_larger:
+	mov r12, qword number_1[rdx]
+	mov rax, qword number_2[rdx]
+	sub rax, r12
+	cmp rax, 0
+	jl fix_neg_result_addition_second_larger
+	mov qword result [rdx + 8], rax
+check_condition_diff_sign_second_larger:
+	sub rdx, 8
+	cmp rdx, 0
+	jge add_diff_sign_second_larger
+	jmp check_result_sign_diff_sign	
+
+
+fix_neg_result_addition_second_larger:
+	add rax, 10
+	mov qword result[rdx + 8], rax
+	sub qword number_2[rdx - 8], 1
+	jmp check_condition_diff_sign_second_larger
+
+
+
+
+
+
+add_diff_sign_first_larger:
+        mov rax, qword number_1[rbx]
+        mov r12, qword number_2[rbx]
+        sub rax, r12
+        cmp rax, 0
+        jl fix_neg_result_addition_first_larger
+        mov qword result [rbx + 8], rax
+check_condition_diff_sign_first_larger:
+        sub rbx, 8
+        cmp rbx, 0
+        jge add_diff_sign_first_larger
+        jmp check_result_sign_diff_sign
+
+
+fix_neg_result_addition_first_larger:
+        add rax, 10
+        mov qword result[rbx + 8], rax
+        sub qword number_1[rbx - 8], 1
+        jmp check_condition_diff_sign_first_larger
+
+
+
+
+
+check_result_sign_diff_sign:
+	cmp qword larger[0], 2
+	je check_sign_two
+	mov rax, qword is_number1_pos[0]
+	mov qword result_sign[0], rax
+	jmp make_index_zero_addition
+
+check_sign_two:
+	mov rax, qword is_number2_pos[0]
+	mov qword result_sign[0], rax
+	
+
+
+
+make_index_zero_addition: ;this branch makes the index of rdx zero so we can traverse the result for printing the answer
+	mov rdx, 0
+	mov rax, qword carry[0]
+	mov qword result[0], rax
+	cmp qword larger[0], 0
+	jne print_addition_result
+	mov rax, qword is_number1_pos[0]
+	mov r12, qword is_number2_pos[0]
+	mul r12
+	mov rdx, 0
+	cmp rax, 0
+	jge print_addition_result
+	jmp answer_zero_addition  
+print_addition_result:
+	mov rax, qword result_sign[0]
+	cmp rax, 0
+	jl print_neg_sign
+cont_print_addition_result:
+	mov rdi, qword result[rdx]
+	cmp rdi, 0
+	je skip_printing_addition
+cont2_print_addition_result:
+	mov rdi, qword result[rdx]
+	add rdi, 48
+	call print_int
+	add rdx, 8
+	cmp rdx, qword result_digit[0] 
+	jg finish_addition
+	jmp cont2_print_addition_result	
+
+skip_printing_addition:
+	add rdx, 8
+	jmp cont_print_addition_result
+
+
+print_neg_sign:
+	mov rdi, 45
+	call print_int
+	mov qword is_number1_pos[0], 1
+	jmp cont_print_addition_result
+
+print_zero_addition:
+	mov rdi, 48
+	call print_int
+	jmp finish_addition
+
+answer_zero_addition:
+	mov rdi, 48
+	call print_int
+	jmp finish_addition
+
+
+set_back_array:
+	mov qword number_1[rdx], 0
+	mov qword number_2[rdx], 0
+	mov qword result[rdx], 0
+	mov qword divider[rdx], 48
+	add rdx, 8
+	sub rbx, 1
+	cmp rbx, 0
+	jg set_back_array
+	jmp cont_finish_addition
+
+
+finish_addition:
+	mov rbx, 512
+	mov rdx, 0
+	jmp set_back_array
+cont_finish_addition:
+	mov rdi, 10
+	call print_int
+	mov qword is_number1_pos[0], 1
+	mov qword is_number2_pos[0], 1
+	jmp define_operation
+
+
+
+
+
+subtraction:
+	cmp qword larger[0], 0
+	je check_sign_equal_number
+half_cont_subtraction:
+	mov rbx, qword number_1_digit[0]
+        sub rbx, 8
+        mov r13, qword number_2_digit[0]
+        sub r13, 8
+        cmp rbx, r13
+        jg cont_subtraction
+        xchg rbx, r13
+cont_subtraction: ;this is where we decide to subtract two numbers with the same sign or different signs
+        add rbx, 8
+        mov qword result_digit[0], rbx ;here we save the number result's number of digits
+       	sub rbx, 8
+        mov rax, qword is_number1_pos[0]
+        mov r12, qword is_number2_pos[0]
+        mul r12
+        cmp rax, 0
+        jl add_sameSign
+	mov rdx, qword larger[0]
+	cmp rdx, 2
+	je make_second_neg
+	jmp add_diff_sign
+
+
+make_second_neg: ;if the second number is larger and we are adding in different signes, the sign of the second number has to be switched
+	mov rax, is_number2_pos[0]
+	mov r13, -1
+	mul r13
+	mov qword is_number2_pos[0], rax
+	jmp add_diff_sign
+
+check_sign_equal_number:
+	mov rax, qword is_number1_pos[0]
+	mov r12, qword is_number2_pos[0]
+	mul r12
+	cmp rax, 0
+	jg half_cont_subtraction
+	mov rax, qword is_number2_pos[0]
+	mov r12, -1
+	mul r12
+	mov qword is_number2_pos[0], rax
+	mov rbx, qword number_2_digit[0]
+	mov qword result_digit[0], rbx
+	sub rbx, 8
+	jmp add_sameSign
+
+
+
+multiplication:
+	
+	mov qword multi_carry[0], 0
+	mov qword zero_for_partial[0], 0
+	mov qword multi_stop_process[0], 0
+	mov r12, qword is_number1_pos[0]
+	mov rax, qword is_number2_pos[0]
+	mul r12
+	cmp rax, 0
+	jl set_result_sign
+	mov qword result_sign[0], 1
+	jmp arithmetic_multi
+
+set_result_sign:
+	mov qword result_sign[0], -1
+
+
+arithmetic_multi:
+	mov r13, 10
+	mov r11, 0 ;index pf partial sum array
+	mov r14, 0 ; index of total partial sum array
+	mov rbx, qword number_1_digit[0]
+	sub rbx, 8
+	mov r12, qword number_2_digit[0]
+	mov r15, qword number_1_digit[0]
+	sub r12, 8
+	sub r15, 8
+	cmp rbx, r12
+	jl first_num_smaller
+	sub rbx, r12
+	sub rbx, 8
+	mov qword multi_stop_process[0], rbx
+	mov rbx, qword number_1_digit[0]
+	sub rbx, 8
+	xchg rbx, r12
+	mov r10, qword number_2[r12]
+	sub r10, 48	
+partial_sum_one:
+	mov rax, qword number_1[r12]
+	sub rax, 48
+	mul r10
+	add rax, qword multi_carry[0]
+	mov rdx, 0
+	div r13
+	mov qword multi_carry[0], rax
+	mov qword total_partial[r14], rdx
+	add r14, 8
+	sub r12, 8
+	cmp r12, 0
+	jge partial_sum_one
+	mov r9, qword multi_carry[0]
+	mov qword total_partial[r14], r9
+	add qword zero_for_partial[0], 1
+	sub r15, 8
+	cmp r15, qword multi_stop_process[0] 
+	mov r11, r14
+	je print_multi_answer
+	mov r11, 0
+get_digits_for_partial:
+	mov r10, qword number_2[r15]
+	sub r10, 48
+	mov r12, qword number_1_digit[0]
+	sub r12, 8
+	mov rdx, qword zero_for_partial[0]
+	mov qword multi_carry[0], 0
+	jmp place_zero
+calculate_partial:
+	mov rax, qword number_1[r12]
+	sub rax, 48
+	mul r10
+	add rax, qword multi_carry[0]
+	div r13
+	mov qword multi_carry[0], rax
+	mov qword partial_sum[r11], rdx
+	add r11, 8
+	sub r12, 8
+	cmp r12, 0
+	jge calculate_partial	
+	mov r9, qword multi_carry[0]
+	mov qword partial_sum[r11], r9
+	add qword zero_for_partial[0], 1
+	mov r10, 0
+	mov qword carry[0], 0
+	jmp add_partials
+cont_calculate_partial:
+	sub r15, 8
+	cmp r15, qword multi_stop_process[0]
+	je print_multi_answer
+	mov r11, 0
+	jmp get_digits_for_partial
+
+
+
+place_zero:
+	mov qword partial_sum[r11], 0
+	add r11, 8
+	sub rdx, 1
+	cmp rdx, 0
+	jne place_zero
+	jmp calculate_partial
+
+
+
+	
+add_partials:
+	mov rax, qword total_partial[r10]
+	add rax, qword partial_sum[r10]
+	add rax, qword carry[0]
+	cmp rax, 10
+	jge fix_add_carry
+	mov qword total_partial[r10], rax
+	mov qword carry[0], 0
+cont_add_partials:	
+	add r10, 8
+	cmp r10, r11
+	jle add_partials
+	jmp cont_calculate_partial
+	
+	
+
+fix_add_carry:	
+	mov rdx, 0
+	div r13
+	mov qword carry[0], rax
+	mov qword total_partial[r10], rdx
+	jmp cont_add_partials
+
+
+
+first_num_smaller:
+	mov r15, r12
+	sub r12, rbx
+        sub r12, 8
+        mov qword multi_stop_process[0], r12
+        mov r12, qword number_2_digit[0]
+        sub r12, 8
+        mov r10, qword number_1[r12]
+        sub r10, 48
+partial_sum_one1:
+        mov rax, qword number_2[r12]
+        sub rax, 48
+        mul r10
+        add rax, qword multi_carry[0]
+        mov rdx, 0
+        div r13
+        mov qword multi_carry[0], rax
+        mov qword total_partial[r14], rdx
+        add r14, 8
+        sub r12, 8
+        cmp r12, 0
+        jge partial_sum_one1
+        mov r9, qword multi_carry[0]
+        mov qword total_partial[r14], r9
+        add qword zero_for_partial[0], 1
+        sub r15, 8
+        cmp r15, qword multi_stop_process[0]
+        mov r11, r14
+        je print_multi_answer
+        mov r11, 0
+get_digits_for_partial1:
+        mov r10, qword number_1[r15]
+        sub r10, 48
+        mov r12, qword number_2_digit[0]
+        sub r12, 8
+        mov rdx, qword zero_for_partial[0]
+        mov qword multi_carry[0], 0
+        jmp place_zero1
+calculate_partial1:
+        mov rax, qword number_2[r12]
+        sub rax, 48
+        mul r10
+        add rax, qword multi_carry[0]
+        div r13
+        mov qword multi_carry[0], rax
+        mov qword partial_sum[r11], rdx
+        add r11, 8
+        sub r12, 8
+        cmp r12, 0
+        jge calculate_partial1
+        mov r9, qword multi_carry[0]
+        mov qword partial_sum[r11], r9
+        add qword zero_for_partial[0], 1
+        mov r10, 0
+        mov qword carry[0], 0
+        jmp add_partials1
+cont_calculate_partial1:
+        sub r15, 8
+        cmp r15, qword multi_stop_process[0]
+        je print_multi_answer
+        mov r11, 0
+        jmp get_digits_for_partial1
+
+place_zero1:
+        mov qword partial_sum[r11], 0
+        add r11, 8
+        sub rdx, 1
+        cmp rdx, 0
+        jne place_zero1
+        jmp calculate_partial1
+
+add_partials1:
+        mov rax, qword total_partial[r10]
+        add rax, qword partial_sum[r10]
+        add rax, qword carry[0]
+        cmp rax, 10
+        jge fix_add_carry1
+        mov qword total_partial[r10], rax
+        mov qword carry[0], 0
+cont_add_partials1:
+        add r10, 8
+        cmp r10, r11
+        jle add_partials1
+        jmp cont_calculate_partial1
+
+
+
+fix_add_carry1:
+        mov rdx, 0
+        div r13
+        mov qword carry[0], rax
+        mov qword total_partial[r10], rdx
+        jmp cont_add_partials1
+
+
+
+
+print_multi_answer:
+	mov rax, qword result_sign[0]
+	cmp rax, 0
+	jl  print_neg_sign_multi
+cont_print_multi_answer:
+	cmp qword total_partial[r11], 0
+	je skip_first_zero
+cont2_print_multi_answer:
+	mov rdi, qword total_partial[r11]
+        add rdi, 48
+        call print_int
+        sub r11, 8
+        cmp r11, 0
+        jge cont2_print_multi_answer
+        jmp finish_multi
+
+skip_first_zero:	
+	sub r11, 8
+	cmp qword total_partial[r11], 0
+	je answer_zero
+	jmp cont2_print_multi_answer
+
+print_neg_sign_multi:
+	cmp qword total_partial[r11-16], 0
+	je answer_zero
+	mov rdi, 45
+	call print_int
+	jmp cont_print_multi_answer
+
+answer_zero:
+	mov rdi, 48
+	call print_int
+	jmp finish_multi
+
+
+
+set_back_array_multi:
+        mov qword number_1[rdx], 0
+        mov qword number_2[rdx], 0
+        mov qword result[rdx], 0
+	mov qword partial_sum[rdx], 0
+	mov qword total_partial[rdx], 0
+	mov qword divider[rdx], 48
+        add rdx, 8
+        sub rbx, 1
+        cmp rbx, 0
+        jg set_back_array_multi
+        jmp cont_finish_multi
+
+
+finish_multi:
+        mov rbx, 512
+        mov rdx, 0
+        jmp set_back_array_multi
+cont_finish_multi:
+        mov rdi, 10
+        call print_int
+        mov qword is_number1_pos[0], 1
+        mov qword is_number2_pos[0], 1
+        jmp define_operation
+
+	
+remainder:
+	mov qword remainder_flag[0], 1
+division:
+	mov rax, qword is_number1_pos[0]
+	mov r14, qword is_number2_pos[0]
+	mul r14
+	cmp rax, 0
+	jl result_sign_neg_div
+	mov qword result_sign[0], 1
+	jmp dividing_or_remainder	
+	
+result_sign_neg_div:
+	mov qword result_sign[0], -1
+
+dividing_or_remainder:
+	cmp qword remainder_flag[0], 0
+	je dividing
+	cmp qword larger[0], 1
+	jle dividing
+	mov rdx, qword number_2_digit[0]
+        mov rbx, qword number_1_digit[0]
+        sub rdx, rbx
+        mov rbx, qword number_2_digit[0]
+print_remainder_for_smaller:
+	cmp qword is_number1_pos[0], 0
+	jl print_neg_remainder_smaller
+cont_print_remainder_for_smaller:
+	mov rdi, qword number_1[rdx]
+	call print_int
+	add rdx, 8
+	cmp rdx, rbx
+	jl cont_print_remainder_for_smaller
+	mov rdi, 10
+	call print_int
+	jmp complete_division
+
+print_neg_remainder_smaller:
+	mov rdi, 45
+	call print_int
+	jmp cont_print_remainder_for_smaller
+
+
+dividing:
+	cmp qword larger[0], 1
+	jle the_real_division
+	mov rdi, 48
+	call print_int
+	mov rdi, 10
+	call print_int
+	jmp complete_division
+
+
+
+the_real_division:	
+	mov rdx, qword number_1_digit[0]
+	sub rdx, 8
+	mov rbx, 0
+compare_first_term:
+	mov rax, qword divider[rbx + 8]
+	cmp rax, qword number_1[rbx]
+	jl shift_number_1
+	jg start_division 
+	add rbx, 8
+	cmp rbx, rdx 
+	jle compare_first_term
+	
+
+shift_number_1:	
+	mov rdx, qword number_1_digit[0]
+	sub rdx, 8
+	add qword number_1_digit [0], 8 ;we do this to because we are shifting the first number by one so its digits have to increase
+cont_shift_number_1:
+	mov rax, qword number_1[rdx]
+	mov qword number_1[rdx + 8], rax
+	sub rdx, 8
+	cmp rdx, 0
+	jge cont_shift_number_1
+	mov qword number_1[0], 48
+
+start_division:
+	mov rdx, qword number_1_digit[0]
+	sub rdx, 8
+subtract_to_divide:
+	mov rax, qword number_1[rdx]
+	mov r12, qword divider[rdx]
+	sub rax, r12
+	mov qword number_1[rdx], rax
+	cmp rax, 0
+	jl fix_borrow_digit
+cont_subtract_to_divide:
+	add qword number_1[rdx], 48
+	sub rdx, 8
+	cmp rdx, 0
+	jge subtract_to_divide
+	mov rdx, qword divider_place[0]
+	add qword result[rdx], 1
+	mov rdx, 0
+	mov rbx, qword number_1_digit[0]
+	sub rbx, 8
+	jmp compare_after_subtraction
+
+
+fix_borrow_digit:
+	add qword number_1[rdx], 10
+	sub qword number_1[rdx - 8], 1
+	jmp cont_subtract_to_divide
+
+
+
+compare_after_subtraction:
+	mov rax, qword divider[rdx]
+	cmp rax, qword number_1[rdx]
+	jl start_division
+	jg shift_divider 
+	add rdx, 8
+	cmp rdx, rbx
+	jle compare_after_subtraction
+	jmp start_division
+
+
+shift_divider:
+	mov rax, qword divider_place[0]
+	add rax, qword number_2_digit[0]
+	cmp rax, qword number_1_digit[0]
+	je finish_division_or_remainder
+	sub rax, 8
+	mov rbx, rax
+cont_shift_divider:
+	mov r12, qword divider[rbx]
+	mov qword divider[rbx + 8], r12
+	sub rbx, 8
+	cmp rbx, 0
+	jge cont_shift_divider
+	mov qword divider[0], 48
+	add qword divider_place[0], 8
+	mov rdx, 0
+	mov rbx, qword number_1_digit[0]
+	sub rbx, 8
+	jmp compare_after_subtraction
+	
+
+finish_division_or_remainder:
+	cmp qword remainder_flag[0], 0
+	je finish_division
+	mov rdx, qword divider_place[0]
+	mov rbx, qword number_1_digit[0]
+	sub rbx, 8
+	cmp qword is_number1_pos[0], 0
+	jl print_neg_remainder_bigger
+print_remainder_bigger:
+	cmp qword number_1[rdx], 48
+	je skip_first_zero_div
+cont_print_remainder_bigger:
+	mov rdi, qword number_1[rdx]
+	call print_int
+	add rdx, 8
+	cmp rdx, rbx
+	jle cont_print_remainder_bigger
+	sub rdx, 8
+	cmp qword number_1[rdx], 0
+	jne skip_printing_zero_remainder
+	mov rdi, 48
+	call print_int
+skip_printing_zero_remainder:
+	mov rdi, 10
+	call print_int
+	jmp complete_division 
+
+
+print_neg_remainder_bigger:
+	mov rdi, 45
+	call print_int
+	jmp print_remainder_bigger
+
+skip_first_zero_div:
+	add rdx, 8
+	jmp print_remainder_bigger
+	
+
+
+finish_division:
+	mov rdx, 8
+	cmp qword result_sign[0], 0
+	jl print_negative_sign
+print_answer_division:
+	mov rdi, qword result[rdx]
+	add rdi, 48
+	call print_int
+	add rdx, 8
+	cmp rdx, qword divider_place[0]
+	jle print_answer_division
+	mov rdi, 10
+	call print_int
+	jmp complete_division
+
+print_negative_sign:
+	mov rdi, 45
+	call print_int
+	jmp print_answer_division
+
+
+
+
+setback_array_div:
+        mov qword number_1[rdx], 0
+        mov qword number_2[rdx], 0
+        mov qword result[rdx], 0
+	mov qword divider[rdx], 48
+        add rdx, 8
+        sub rbx, 1
+        cmp rbx, 0
+        jg setback_array_div
+        jmp cont_complete_div
+
+
+complete_division:
+        mov rbx, 512
+        mov rdx, 0
+        jmp setback_array_div
+cont_complete_div:
+	mov qword divider_place[0], 8
+        mov qword is_number1_pos[0], 1
+        mov qword is_number2_pos[0], 1
+	mov qword remainder_flag[0], 0
+        jmp define_operation
+	
+
+
+
+FIN:	
+	
+
+	mov rax, 60
+	xor rdi, rdi
+	syscall
+
+
+
+
+
+read_int:
+	push rdi
+	push rsi
+	push rdx
+
+	mov rax, 0
+	mov rdi, 0
+	mov rsi, num
+	mov rdx, 1
+	syscall
+
+	
+	mov rax, qword num[0]	
+	pop rdx
+	pop rsi
+	pop rdi
+	
+	
+	ret
+
+
+
+print_int:
+	push rdi
+	push rsi
+	push rdx
+	push r11
+
+	mov qword num[0], rdi
+	mov rax, 1
+	mov rdi, 1
+	mov rsi, num
+	mov rdx, 1
+	syscall
+	
+	pop r11
+	pop rdx
+	pop rsi
+	pop rdi
+	
+
+	ret
+
+
+read_char:
+
+	push rdi
+        push rsi
+        push rdx
+
+	mov rax, 0
+	mov rdi, 0
+	mov rsi, char
+	mov rdx, 1
+	syscall
+	mov rax, qword char[0]
+
+	pop rdx
+        pop rsi
+        pop rdi
+
+	ret 
+
+
+
+
+print_char:
+
+	push rdx
+        push rsi
+        push rdi
+
+	mov qword char[0], rdi
+	mov rax, 1
+	mov rdi, 1
+	mov rsi, char
+	mov rdx, 1
+	syscall
+
+
+	pop rdx
+        pop rsi
+        pop rdi
+
+	ret
+
+
+	
